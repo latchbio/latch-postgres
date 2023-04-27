@@ -58,11 +58,11 @@ from psycopg.types.enum import EnumInfo, register_enum
 from psycopg_pool import AsyncConnectionPool
 from typing_extensions import Self
 
-from latch_python_postgres.retries import CABackoff
+from latch_postgres.retries import CABackoff
 
-from latch_python_config.config import config
-from latch_python_data_validation.data_validation import JsonObject, validate
-from latch_python_o11y.o11y import dict_to_attrs, trace_function
+from latch_config.config import config
+from latch_data_validation.data_validation import JsonObject, validate
+from latch_o11y.o11y import dict_to_attrs, trace_function
 
 T = TypeVar("T")
 
