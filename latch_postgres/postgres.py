@@ -60,13 +60,15 @@ from typing_extensions import Self
 
 from latch_postgres.retries import CABackoff
 
-from latch_config.config import config
+from latch_config.config import Config, read_config
 from latch_data_validation.data_validation import JsonObject, validate
 from latch_o11y.o11y import dict_to_attrs, trace_function
 
 T = TypeVar("T")
 
 tracer = get_tracer(__name__)
+
+config = read_config(Config)
 
 db_config = config.database
 
