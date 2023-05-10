@@ -18,7 +18,7 @@ from typing import (
 )
 
 import psycopg.sql as sql
-from latch_config.config import DatabaseConfig, read_config
+from latch_config.config import DatabaseConfig
 from latch_data_validation.data_validation import JsonObject, validate
 from latch_o11y.o11y import dict_to_attrs, trace_function
 from opentelemetry.sdk.resources import Attributes
@@ -66,9 +66,6 @@ from latch_postgres.retries import CABackoff
 T = TypeVar("T")
 
 tracer = get_tracer(__name__)
-
-db_config = read_config(DatabaseConfig)
-
 
 # todo(maximsmol): switch all the tracing attributes to otel spec
 # del span.type
@@ -486,7 +483,7 @@ def pg_error_to_dict(x: PGError, *, short: bool = False):
 def with_conn_retry(
     f: Callable[Concatenate[LatchAsyncConnection[Any], P], Awaitable[T]],
     pool: AsyncConnectionPool,
-    db_config=db_config,
+    db_config: DatabaseConfig,
 ) -> Callable[P, Awaitable[T]]:
     @functools.wraps(f)
     async def inner(*args: P.args, **kwargs: P.kwargs):
@@ -610,7 +607,7 @@ def with_conn_retry(
 
 
 def get_with_conn_retry(
-    pool: AsyncConnectionPool, db_config=db_config
+    pool: AsyncConnectionPool, db_config: DatabaseConfig
 ) -> Callable[
     [Callable[Concatenate[LatchAsyncConnection[Any], P], Awaitable[T]]],
     Callable[P, Awaitable[T]],
@@ -636,8 +633,7 @@ async def reset_conn(x: AsyncConnection[object]):
 
 # fixme(maximsmol): use autocommit transactions
 def get_pool(
-    config: DatabaseConfig,
-    application_name: str
+    config: DatabaseConfig, application_name: str
 ) -> TracedAsyncConnectionPool:
     conn_str = make_conninfo(
         host=config.host,
