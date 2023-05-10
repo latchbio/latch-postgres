@@ -635,14 +635,17 @@ async def reset_conn(x: AsyncConnection[object]):
 
 
 # fixme(maximsmol): use autocommit transactions
-def get_pool(config: DatabaseConfig) -> TracedAsyncConnectionPool:
+def get_pool(
+    config: DatabaseConfig,
+    application_name: str
+) -> TracedAsyncConnectionPool:
     conn_str = make_conninfo(
         host=config.host,
         port=config.port,
         dbname=config.dbname,
         user=config.user,
         password=config.password,
-        application_name="latch_nucleus_data",
+        application_name=application_name,
     )
     return TracedAsyncConnectionPool(
         conn_str,
