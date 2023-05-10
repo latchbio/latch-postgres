@@ -18,6 +18,9 @@ from typing import (
 )
 
 import psycopg.sql as sql
+from latch_config.config import DatabaseConfig, read_config
+from latch_data_validation.data_validation import JsonObject, validate
+from latch_o11y.o11y import dict_to_attrs, trace_function
 from opentelemetry.sdk.resources import Attributes
 from opentelemetry.trace import SpanKind, get_tracer
 from psycopg import AsyncConnection, AsyncCursor, IsolationLevel
@@ -60,17 +63,11 @@ from typing_extensions import Self
 
 from latch_postgres.retries import CABackoff
 
-from latch_config.config import Config, read_config
-from latch_data_validation.data_validation import JsonObject, validate
-from latch_o11y.o11y import dict_to_attrs, trace_function
-
 T = TypeVar("T")
 
 tracer = get_tracer(__name__)
 
-config = read_config(Config)
-
-db_config = config.database
+db_config = read_config(DatabaseConfig)
 
 
 # todo(maximsmol): switch all the tracing attributes to otel spec
@@ -487,7 +484,9 @@ def pg_error_to_dict(x: PGError, *, short: bool = False):
 
 
 def with_conn_retry(
-    f: Callable[Concatenate[LatchAsyncConnection[Any], P], Awaitable[T]]
+    f: Callable[Concatenate[LatchAsyncConnection[Any], P], Awaitable[T]],
+    pool: AsyncConnectionPool,
+    db_config=db_config,
 ) -> Callable[P, Awaitable[T]]:
     @functools.wraps(f)
     async def inner(*args: P.args, **kwargs: P.kwargs):
@@ -576,18 +575,15 @@ def with_conn_retry(
                         # todo(maximsmol): add metrics
                         retries += 1
 
-                        if (
-                            accum_retry_time
-                            > config.database.conn_retries.max_wait_time
-                        ):
+                        if accum_retry_time > db_config.conn_retries.max_wait_time:
                             raise
 
                         if retries == 1:
                             delay = 0
                         else:
                             delay = random.uniform(
-                                config.database.conn_retries.min_retry_time,
-                                config.database.conn_retries.max_retry_time,
+                                db_config.conn_retries.min_retry_time,
+                                db_config.conn_retries.max_retry_time,
                             )
 
                         s.add_event(
@@ -613,6 +609,15 @@ def with_conn_retry(
     return inner
 
 
+def get_with_conn_retry(
+    pool: AsyncConnectionPool, db_config=db_config
+) -> Callable[
+    [Callable[Concatenate[LatchAsyncConnection[Any], P], Awaitable[T]]],
+    Callable[P, Awaitable[T]],
+]:
+    return functools.partial(with_conn_retry, pool=pool, db_config=db_config)
+
+
 def sqlq(x: str):
     return sql.SQL(dedent(x))
 
@@ -630,21 +635,22 @@ async def reset_conn(x: AsyncConnection[object]):
 
 
 # fixme(maximsmol): use autocommit transactions
-conn_str = make_conninfo(
-    host=config.database.host,
-    port=config.database.port,
-    dbname=config.database.dbname,
-    user=config.database.user,
-    password=config.database.password,
-    application_name="latch_nucleus_data",
-)
-pool = TracedAsyncConnectionPool(
-    conn_str,
-    min_size=1,
-    max_size=config.database.pool_size,
-    timeout=timedelta(seconds=5) / timedelta(seconds=1),
-    open=False,  # tied into the server lifecycle instead
-    configure=reset_conn,
-    reset=reset_conn,
-    connection_class=LatchAsyncConnection,
-)
+def get_pool(config: DatabaseConfig) -> TracedAsyncConnectionPool:
+    conn_str = make_conninfo(
+        host=config.host,
+        port=config.port,
+        dbname=config.dbname,
+        user=config.user,
+        password=config.password,
+        application_name="latch_nucleus_data",
+    )
+    return TracedAsyncConnectionPool(
+        conn_str,
+        min_size=1,
+        max_size=config.pool_size,
+        timeout=timedelta(seconds=5) / timedelta(seconds=1),
+        open=False,  # tied into the server lifecycle instead
+        configure=reset_conn,
+        reset=reset_conn,
+        connection_class=LatchAsyncConnection,
+    )
