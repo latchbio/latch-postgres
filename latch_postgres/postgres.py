@@ -18,7 +18,7 @@ from typing import (
 )
 
 import psycopg.sql as sql
-from latch_config.config import DatabaseConfig
+from latch_config.config import PostgresConnectionConfig
 from latch_data_validation.data_validation import JsonObject, validate
 from latch_o11y.o11y import dict_to_attrs, trace_function
 from opentelemetry.sdk.resources import Attributes
@@ -66,6 +66,7 @@ from latch_postgres.retries import CABackoff
 T = TypeVar("T")
 
 tracer = get_tracer(__name__)
+
 
 # todo(maximsmol): switch all the tracing attributes to otel spec
 # del span.type
@@ -213,6 +214,11 @@ class LatchAsyncConnection(AsyncConnection[Row]):
             raise RuntimeError(f"received too many rows: '{len(results)}' > 1")
 
         return results[0]
+
+    async def query_void(
+        self, query: sql.SQL, **kwargs: Any
+    ) -> None:
+        await self.queryn(type(None), query, **kwargs)
 
 
 @dataclass(frozen=True)
@@ -483,7 +489,7 @@ def pg_error_to_dict(x: PGError, *, short: bool = False):
 def with_conn_retry(
     f: Callable[Concatenate[LatchAsyncConnection[Any], P], Awaitable[T]],
     pool: AsyncConnectionPool,
-    db_config: DatabaseConfig,
+    db_config: PostgresConnectionConfig,
 ) -> Callable[P, Awaitable[T]]:
     @functools.wraps(f)
     async def inner(*args: P.args, **kwargs: P.kwargs):
@@ -607,7 +613,7 @@ def with_conn_retry(
 
 
 def get_with_conn_retry(
-    pool: AsyncConnectionPool, db_config: DatabaseConfig
+    pool: AsyncConnectionPool, db_config: PostgresConnectionConfig
 ) -> Callable[
     [Callable[Concatenate[LatchAsyncConnection[Any], P], Awaitable[T]]],
     Callable[P, Awaitable[T]],
@@ -621,11 +627,11 @@ def sqlq(x: str):
 
 # todo(maximsmol): conn resets appear in the startup span and make it last forever
 @trace_function(tracer)
-async def reset_conn(x: AsyncConnection[object]):
+async def reset_conn(x: AsyncConnection[object], read_only: bool = False):
     x.prepare_threshold = 0
 
-    if not x.read_only:
-        await x.set_read_only(True)
+    if x.read_only != read_only:
+        await x.set_read_only(read_only)
 
     if x.isolation_level != IsolationLevel.SERIALIZABLE:
         await x.set_isolation_level(IsolationLevel.SERIALIZABLE)
@@ -633,7 +639,9 @@ async def reset_conn(x: AsyncConnection[object]):
 
 # fixme(maximsmol): use autocommit transactions
 def get_pool(
-    config: DatabaseConfig, application_name: str
+    config: PostgresConnectionConfig,
+    application_name: str,
+    read_only: bool = True,
 ) -> TracedAsyncConnectionPool:
     conn_str = make_conninfo(
         host=config.host,
@@ -648,8 +656,8 @@ def get_pool(
         min_size=1,
         max_size=config.pool_size,
         timeout=timedelta(seconds=5) / timedelta(seconds=1),
-        open=False,  # tied into the server lifecycle instead
-        configure=reset_conn,
-        reset=reset_conn,
+        open=False,
+        configure=functools.partial(reset_conn, read_only=read_only),
+        reset=functools.partial(reset_conn, read_only=read_only),
         connection_class=LatchAsyncConnection,
     )
