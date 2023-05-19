@@ -215,9 +215,7 @@ class LatchAsyncConnection(AsyncConnection[Row]):
 
         return results[0]
 
-    async def query_void(
-        self, query: sql.SQL, **kwargs: Any
-    ) -> None:
+    async def query_void(self, query: sql.SQL, **kwargs: Any) -> None:
         await self.queryn(type(None), query, **kwargs)
 
 
