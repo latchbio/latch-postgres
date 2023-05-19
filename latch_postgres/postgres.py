@@ -284,31 +284,16 @@ class TracedAsyncConnectionPool(AsyncConnectionPool):
                     with tracer.start_as_current_span(
                         "composite type setup",
                     ):
-                        composite_type_infos: list[CompositeInfo | None] = []
                         with tracer.start_as_current_span(
-                            "fetch composite type info",
+                            "register composite types",
                         ):
-                            composite_type_infos = await asyncio.gather(
-                                *[
-                                    CompositeInfo.fetch(conn, db_type)
-                                    for db_type in self.composite_type_map
-                                ]
-                            )
-
-                        for t, db_type in zip(
-                            composite_type_infos, self.composite_type_map
-                        ):
-                            with tracer.start_as_current_span(
-                                f"registering {db_type}",
-                            ):
-                                if t is None:
+                            for db_type, f in self.composite_type_map.items():
+                                type_info = await CompositeInfo.fetch(conn, db_type)
+                                if type_info is None:
                                     raise RuntimeError(
                                         f"failed to fetch composite info for {db_type}"
                                     )
-
-                                register_composite(
-                                    t, conn, self.composite_type_map[db_type]
-                                )
+                                register_composite(type_info, conn, f)
 
                 async def run_enum_setup():
                     with tracer.start_as_current_span(
