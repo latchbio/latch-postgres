@@ -218,6 +218,13 @@ class LatchAsyncConnection(AsyncConnection[Row]):
     async def query_void(self, query: sql.SQL, **kwargs: Any) -> None:
         await self.queryn(type(None), query, **kwargs)
 
+    async def query_unknown(self, query: sql.SQL, **kwargs: Any) -> Any:
+        async with self._query(JsonObject, query, **kwargs) as curs:
+            if curs.description is None:
+                return None
+
+            return await curs.fetchall()
+
 
 @dataclass(frozen=True)
 class EnumInfoQueryResponse:
