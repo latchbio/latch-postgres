@@ -522,7 +522,6 @@ def with_conn_retry(
                                             "db.retry.reason",
                                         ),
                                     )
-                                    await conn.rollback()
                                     await asyncio.sleep(delay)
                     except (SerializationFailure, DeadlockDetected):
                         # todo(maximsmol): should be unnecessary if the list below is precise enough
