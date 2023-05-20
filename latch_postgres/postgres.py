@@ -55,7 +55,7 @@ from psycopg.errors import (
     TooManyConnections,
     UndefinedFile,
 )
-from psycopg.rows import AsyncRowFactory, Row, kwargs_row
+from psycopg.rows import AsyncRowFactory, Row, dict_row, kwargs_row
 from psycopg.types.composite import CompositeInfo, register_composite
 from psycopg.types.enum import EnumInfo, register_enum
 from psycopg_pool import AsyncConnectionPool
@@ -184,6 +184,15 @@ class LatchAsyncConnection(AsyncConnection[Row]):
 
             yield curs
 
+    @asynccontextmanager
+    async def _query_no_validate(
+        self, query: sql.SQL, **kwargs: Any
+    ) -> AsyncGenerator[AsyncCursor[Any], None]:
+        async with self.cursor(dict_row) as curs:
+            await curs.execute(query, params=kwargs)
+
+            yield curs
+
     async def queryn(self, model: type[T], query: sql.SQL, **kwargs: Any) -> list[T]:
         async with self._query(model, query, **kwargs) as curs:
             if curs.description is None:
@@ -219,7 +228,7 @@ class LatchAsyncConnection(AsyncConnection[Row]):
         await self.queryn(type(None), query, **kwargs)
 
     async def query_unknown(self, query: sql.SQL, **kwargs: Any) -> Any:
-        async with self._query(JsonObject, query, **kwargs) as curs:
+        async with self._query_no_validate(query, **kwargs) as curs:
             if curs.description is None:
                 return None
 
