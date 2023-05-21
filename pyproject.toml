@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "latch-postgres"
-version = "0.1.14"
+version = "0.1.15"
 description = "Postges wrapper for latch python backend services"
 authors = ["Max Smolin <max@latch.bio>"]
 license = "CC0 1.0"
