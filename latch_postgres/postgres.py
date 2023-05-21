@@ -538,6 +538,7 @@ def with_conn_retry(
                                             "db.retry.reason",
                                         ),
                                     )
+
                                     await conn.rollback()
                                     await asyncio.sleep(delay)
                     except (SerializationFailure, DeadlockDetected):
