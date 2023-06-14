@@ -627,14 +627,18 @@ def sqlq(x: str):
 
 # todo(maximsmol): conn resets appear in the startup span and make it last forever
 @trace_function(tracer)
-async def reset_conn(x: AsyncConnection[object], read_only: bool = False):
+async def reset_conn(
+    x: AsyncConnection[object],
+    read_only: bool = False,
+    isolation_level: IsolationLevel = IsolationLevel.SERIALIZABLE,
+):
     x.prepare_threshold = 0
 
     if x.read_only != read_only:
         await x.set_read_only(read_only)
 
-    if x.isolation_level != IsolationLevel.SERIALIZABLE:
-        await x.set_isolation_level(IsolationLevel.SERIALIZABLE)
+    if x.isolation_level != isolation_level:
+        await x.set_isolation_level(isolation_level)
 
 
 # fixme(maximsmol): use autocommit transactions
@@ -642,6 +646,7 @@ def get_pool(
     config: PostgresConnectionConfig,
     application_name: str,
     read_only: bool = True,
+    isolation_level: IsolationLevel = IsolationLevel.SERIALIZABLE,
 ) -> TracedAsyncConnectionPool:
     conn_str = make_conninfo(
         host=config.host,
@@ -657,7 +662,11 @@ def get_pool(
         max_size=config.pool_size,
         timeout=timedelta(seconds=5) / timedelta(seconds=1),
         open=False,
-        configure=functools.partial(reset_conn, read_only=read_only),
-        reset=functools.partial(reset_conn, read_only=read_only),
+        configure=functools.partial(
+            reset_conn, read_only=read_only, isolation_level=isolation_level
+        ),
+        reset=functools.partial(
+            reset_conn, read_only=read_only, isolation_level=isolation_level
+        ),
         connection_class=LatchAsyncConnection,
     )
