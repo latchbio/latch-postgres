@@ -500,47 +500,48 @@ def with_conn_retry(
                 while True:
                     try:
                         async with pool.connection() as conn:
-                            assert isinstance(conn, LatchAsyncConnection)
+                            with tracer.start_as_current_span("connection acquired"):
+                                assert isinstance(conn, LatchAsyncConnection)
 
-                            backoff = CABackoff(
-                                db_config.tx_retries.delay_quant,
-                                db_config.tx_retries.max_wait_time,
-                            )
-                            while True:
-                                try:
-                                    res = await f(conn, *args, **kwargs)
-                                    # Commit here so we can retry if it fails
-                                    # Otherwise the context manager will commit and fail
-                                    await conn.commit()
-                                    return res
-                                except (
-                                    # Class 40 - Transaction Rollback
-                                    SerializationFailure,
-                                    DeadlockDetected,
-                                ) as e:
-                                    # Retry with the same connection
-                                    delay = backoff.retry()
+                                backoff = CABackoff(
+                                    db_config.tx_retries.delay_quant,
+                                    db_config.tx_retries.max_wait_time,
+                                )
+                                while True:
+                                    try:
+                                        res = await f(conn, *args, **kwargs)
+                                        # Commit here so we can retry if it fails
+                                        # Otherwise the context manager will commit and fail
+                                        await conn.commit()
+                                        return res
+                                    except (
+                                        # Class 40 - Transaction Rollback
+                                        SerializationFailure,
+                                        DeadlockDetected,
+                                    ) as e:
+                                        # Retry with the same connection
+                                        delay = backoff.retry()
 
-                                    if delay is None:
-                                        raise e
+                                        if delay is None:
+                                            raise e
 
-                                    s.add_event(
-                                        "transaction retry",
-                                        {
-                                            "db.retry.count": retries,
-                                            "db.retry.accum_retry_time": str(
-                                                backoff.acc_wait_time
+                                        s.add_event(
+                                            "transaction retry",
+                                            {
+                                                "db.retry.count": retries,
+                                                "db.retry.accum_retry_time": str(
+                                                    backoff.acc_wait_time
+                                                ),
+                                                "db.retry.delay": str(delay),
+                                            }
+                                            | dict_to_attrs(
+                                                pg_error_to_dict(e, short=True),
+                                                "db.retry.reason",
                                             ),
-                                            "db.retry.delay": str(delay),
-                                        }
-                                        | dict_to_attrs(
-                                            pg_error_to_dict(e, short=True),
-                                            "db.retry.reason",
-                                        ),
-                                    )
+                                        )
 
-                                    await conn.rollback()
-                                    await asyncio.sleep(delay)
+                                        await conn.rollback()
+                                        await asyncio.sleep(delay)
                     except (SerializationFailure, DeadlockDetected):
                         # todo(maximsmol): should be unnecessary if the list below is precise enough
                         raise
