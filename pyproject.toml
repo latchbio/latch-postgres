@@ -11,7 +11,7 @@ dependencies = [
   "psycopg[binary,pool]<4.0.0,>=3.1.8",
   "latch-config<1.0.0,>=0.1.6",
   "latch-data-validation<1.0.0,>=0.1.10",
-  "latch-o11y<2.0.0,>=1.0.0",
+  "latch-o11y>=1.0.0,<2.0.0",
   "opentelemetry-api<2.0.0,>=1.15.0",
   "opentelemetry-sdk<2.0.0,>=1.15.0",
 ]

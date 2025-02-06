@@ -1,21 +1,12 @@
 import asyncio
 import functools
 import random
+from collections.abc import AsyncGenerator, Awaitable, Callable, Iterable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 from textwrap import dedent
-from typing import (
-    Any,
-    AsyncGenerator,
-    Awaitable,
-    Callable,
-    Concatenate,
-    Iterable,
-    ParamSpec,
-    TypeVar,
-    cast,
-)
+from typing import Any, Concatenate, ParamSpec, TypeVar, cast
 
 import psycopg.sql as sql
 from latch_config.config import PostgresConnectionConfig
@@ -37,9 +28,6 @@ from psycopg.errors import (
     DeadlockDetected,
     DiskFull,
     DuplicateFile,
-)
-from psycopg.errors import Error as PGError
-from psycopg.errors import (
     IdleSessionTimeout,
     InsufficientResources,
     IoError,
@@ -55,6 +43,7 @@ from psycopg.errors import (
     TooManyConnections,
     UndefinedFile,
 )
+from psycopg.errors import Error as PGError
 from psycopg.rows import AsyncRowFactory, Row, dict_row, kwargs_row
 from psycopg.types.composite import CompositeInfo, register_composite
 from psycopg.types.enum import EnumInfo, register_enum
@@ -158,15 +147,9 @@ class LatchAsyncConnection(AsyncConnection[Row]):
     trace_attributes: Attributes
 
     def cursor(
-        self,
-        row_factory: AsyncRowFactory[Any],
-        *,
-        binary: bool = True,
+        self, row_factory: AsyncRowFactory[Any], *, binary: bool = True
     ) -> AsyncCursor[Any]:
-        res = super().cursor(
-            row_factory=row_factory,
-            binary=binary,
-        )
+        res = super().cursor(row_factory=row_factory, binary=binary)
         assert isinstance(res, TracedAsyncCursor)
         res.trace_attributes = self.trace_attributes
         return res
@@ -291,18 +274,12 @@ class TracedAsyncConnectionPool(AsyncConnectionPool):
                 )
 
                 async def run_setup(cmd: sql.SQL):
-                    with tracer.start_as_current_span(
-                        "setup command",
-                    ):
+                    with tracer.start_as_current_span("setup command"):
                         await conn.query_opt(dict, cmd)
 
                 async def run_composite_setup():
-                    with tracer.start_as_current_span(
-                        "composite type setup",
-                    ):
-                        with tracer.start_as_current_span(
-                            "register composite types",
-                        ):
+                    with tracer.start_as_current_span("composite type setup"):
+                        with tracer.start_as_current_span("register composite types"):
                             for db_type, f in self.composite_type_map.items():
                                 type_info = await CompositeInfo.fetch(conn, db_type)
                                 if type_info is None:
@@ -312,12 +289,8 @@ class TracedAsyncConnectionPool(AsyncConnectionPool):
                                 register_composite(type_info, conn, f)
 
                 async def run_enum_setup():
-                    with tracer.start_as_current_span(
-                        "enum setup",
-                    ):
-                        with tracer.start_as_current_span(
-                            "fetch type info",
-                        ):
+                    with tracer.start_as_current_span("enum setup"):
+                        with tracer.start_as_current_span("fetch type info"):
                             # query from
                             # https://github.com/psycopg/psycopg/blob/fd1659118e96a48f22b4e67ff17c2cdab8bd0e84/psycopg/psycopg/_typeinfo.py#L148
                             raw_responses = await conn.queryn(
@@ -406,9 +379,7 @@ class TracedAsyncConnectionPool(AsyncConnectionPool):
 
     async def getconn(self, timeout: float | None = None) -> AsyncConnection[object]:
         with tracer.start_as_current_span(
-            "postgres.connect",
-            kind=SpanKind.CLIENT,
-            attributes=self._trace_attributes,
+            "postgres.connect", kind=SpanKind.CLIENT, attributes=self._trace_attributes
         ):
             return await super().getconn(timeout)
 
@@ -443,9 +414,7 @@ def mixin_dict(a: dict[str, object], b: dict[str, object]):
 def pg_error_to_dict(x: PGError, *, short: bool = False):
     diagnostic_obj = {
         "severity": x.diag.severity,
-        "message": {
-            "detail": x.diag.message_detail,
-        },
+        "message": {"detail": x.diag.message_detail},
     }
 
     if not short:
