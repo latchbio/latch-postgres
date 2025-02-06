@@ -1,34 +1,172 @@
-[tool.poetry]
+[project]
 name = "latch-postgres"
-version = "0.1.19"
+version = "0.1.20"
 description = "Postges wrapper for latch python backend services"
-authors = ["Max Smolin <max@latch.bio>"]
-license = "CC0 1.0"
+authors = [{ name = "maximsmol", email = "max@latch.bio" }]
+license = { text = "CC0-1.0" }
 readme = "README.md"
-packages = [{include = "latch_postgres"}]
+requires-python = ">=3.11"
+dependencies = [
+  "typing-extensions<5.0.0,>=4.4.0",
+  "psycopg[binary,pool]<4.0.0,>=3.1.8",
+  "latch-config<1.0.0,>=0.1.6",
+  "latch-data-validation<1.0.0,>=0.1.10",
+  "latch-o11y<2.0.0,>=1.0.0",
+  "opentelemetry-api<2.0.0,>=1.15.0",
+  "opentelemetry-sdk<2.0.0,>=1.15.0",
+]
 
-[tool.poetry.dependencies]
-python = "^3.11"
-typing-extensions = "^4.4.0"
-psycopg = { extras = ["pool", "binary"], version = "^3.1.8" }
-latch-config = "^0.1.6"
-latch-data-validation = "^0.1.10"
-latch-o11y = "^0.1.4"
-opentelemetry-api = "^1.15.0"
-opentelemetry-sdk = "^1.15.0"
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[tool.poetry.dev-dependencies]
-black = "^22.12.0"
-isort = "^5.11.4"
-rich = "^13.2.0"
-ruff = "^0.0.227"
+[tool.uv]
+dev-dependencies = ["ruff>=0.9.5"]
 
-[tool.black]
+[tool.ruff]
+target-version = "py311"
+
+[tool.ruff.lint]
 preview = true
-target-version = ["py311"]
 
-[tool.isort]
-profile = "black"
+pydocstyle = { convention = "google" }
+extend-select = [
+  "F",
+  "E",
+  "W",
+  # "C90",
+  "I",
+  "N",
+  "D",
+  "UP",
+  "YTT",
+  "ANN",
+  "ASYNC",
+  "ASYNC1",
+  "S",
+  # "BLE", # `raise x from y` does not work
+  "FBT",
+  "B",
+  "A",
+  # "COM",
+  # "CPY",
+  "C4",
+  "DTZ",
+  "T10",
+  "DJ",
+  # "EM",
+  "EXE",
+  "FA",
+  "ISC",
+  "ICN",
+  "G",
+  "INP",
+  "PIE",
+  "T20",
+  "PYI",
+  "PT",
+  "Q",
+  "RSE",
+  "RET",
+  "SLF",
+  "SLOT",
+  "SIM",
+  "TID",
+  "TCH",
+  "INT",
+  "ARG",
+  "PTH",
+  "TD",
+  # "FIX",
+  # "ERA",
+  "PD",
+  "PGH",
+  "PL",
+  "TRY",
+  "FLY",
+  "NPY",
+  "AIR",
+  "PERF",
+  "FURB",
+  "LOG",
+  "RUF",
+]
+ignore = [
+  "A002",
+  "A003",
+
+  "ANN101",
+  "ANN102",
+
+  "E402",
+  "E501",
+  "E741",
+
+  "C408",
+  "C901",
+
+  "T201",
+  "T203",
+
+  "D415",
+
+  "SIM108",
+
+  "S101",
+  "S603",
+
+  "N807",
+
+  "D100",
+  "D101",
+  "D102",
+  "D103",
+  "D104",
+  "D105",
+  "D106",
+  "D107",
+
+  "TRY003",
+  "TRY300",
+  "TRY301",
+
+  "FLY002",
+
+  "PLW2901",
+  "PLW0603",
+
+  "PLR0904",
+  "PLR0911",
+  "PLR0912",
+  "PLR0913",
+  "PLR0914",
+  "PLR0915",
+  "PLR0916",
+  "PLR0917",
+  "PLR1702",
+  "PLR2004",
+
+  "TD001",
+  "TD003",
+  "TD006",
+
+  "TID252",
+
+  "PD901",
+
+  # todo(maximsmol): reenable as soon as data-validation can support the `type` syntax
+  "UP040",
+
+  "SIM112",
+
+  "PLC1901",
+
+  "TCH002",
+]
+
+[tool.ruff.format]
+preview = true
+skip-magic-trailing-comma = true
 
 [tool.pyright]
 reportUnknownArgumentType = "none"
@@ -38,7 +176,3 @@ reportUnknownParameterType = "none"
 reportUnknownVariableType = "none"
 
 reportUnusedImport = "warning"
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
