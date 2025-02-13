@@ -1,7 +1,7 @@
 import asyncio
 import functools
 import random
-from collections.abc import AsyncGenerator, Awaitable, Callable, Iterable
+from collections.abc import AsyncGenerator, Awaitable, Callable, Coroutine, Iterable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import timedelta
@@ -52,6 +52,8 @@ from typing_extensions import Self
 
 from latch_postgres.retries import CABackoff
 
+YT = TypeVar("YT")
+ST = TypeVar("ST")
 T = TypeVar("T")
 
 tracer = get_tracer(__name__)
@@ -455,10 +457,10 @@ def pg_error_to_dict(x: PGError, *, short: bool = False):
 
 
 def with_conn_retry(
-    f: Callable[Concatenate[LatchAsyncConnection[Any], P], Awaitable[T]],
+    f: Callable[Concatenate[LatchAsyncConnection[Any], P], Coroutine[YT, ST, T]],
     pool: AsyncConnectionPool,
     db_config: PostgresConnectionConfig,
-) -> Callable[P, Awaitable[T]]:
+) -> Callable[P, Coroutine[YT, ST, T]]:
     @functools.wraps(f)
     async def inner(*args: P.args, **kwargs: P.kwargs):
         with tracer.start_as_current_span("database session") as s:
@@ -585,8 +587,8 @@ def with_conn_retry(
 def get_with_conn_retry(
     pool: AsyncConnectionPool, db_config: PostgresConnectionConfig
 ) -> Callable[
-    [Callable[Concatenate[LatchAsyncConnection[Any], P], Awaitable[T]]],
-    Callable[P, Awaitable[T]],
+    [Callable[Concatenate[LatchAsyncConnection[Any], P], Coroutine[YT, ST, T]]],
+    Callable[P, Coroutine[YT, ST, T]],
 ]:
     return functools.partial(with_conn_retry, pool=pool, db_config=db_config)
 
