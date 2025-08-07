@@ -1,6 +1,6 @@
 [project]
 name = "latch-postgres"
-version = "0.1.21"
+version = "0.2.0"
 description = "Postges wrapper for latch python backend services"
 authors = [{ name = "maximsmol", email = "max@latch.bio" }]
 license = { text = "CC0-1.0" }

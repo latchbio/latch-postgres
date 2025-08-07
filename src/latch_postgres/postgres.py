@@ -616,9 +616,12 @@ async def reset_conn(
 # fixme(maximsmol): use autocommit transactions
 def get_pool(
     config: PostgresConnectionConfig,
+    *,
     application_name: str,
     read_only: bool = True,
     isolation_level: IsolationLevel = IsolationLevel.SERIALIZABLE,
+    configure: Callable[[AsyncConnection[object]], Awaitable[None]] | None = None,
+    reset: Callable[[AsyncConnection[object]], Awaitable[None]] | None = None,
 ) -> TracedAsyncConnectionPool:
     conn_str = make_conninfo(
         host=config.host,
@@ -628,17 +631,24 @@ def get_pool(
         password=config.password,
         application_name=application_name,
     )
+
+    async def configure_impl(x: AsyncConnection[object]) -> None:
+        await reset_conn(x, read_only=read_only, isolation_level=isolation_level)
+        if configure is not None:
+            await configure(x)
+
+    async def reset_impl(x: AsyncConnection[object]) -> None:
+        await reset_conn(x, read_only=read_only, isolation_level=isolation_level)
+        if reset is not None:
+            await reset(x)
+
     return TracedAsyncConnectionPool(
         conn_str,
         min_size=1,
         max_size=config.pool_size,
         timeout=timedelta(seconds=5) / timedelta(seconds=1),
         open=False,
-        configure=functools.partial(
-            reset_conn, read_only=read_only, isolation_level=isolation_level
-        ),
-        reset=functools.partial(
-            reset_conn, read_only=read_only, isolation_level=isolation_level
-        ),
+        configure=configure_impl,
+        reset=reset_impl,
         connection_class=LatchAsyncConnection,
     )
