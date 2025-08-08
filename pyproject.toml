@@ -1,6 +1,6 @@
 [project]
 name = "latch-postgres"
-version = "0.2.0"
+version = "0.2.1"
 description = "Postges wrapper for latch python backend services"
 authors = [{ name = "maximsmol", email = "max@latch.bio" }]
 license = { text = "CC0-1.0" }
@@ -8,7 +8,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "typing-extensions<5.0.0,>=4.4.0",
-  "psycopg[binary,pool]<4.0.0,>=3.1.8",
+  "psycopg[binary,pool]<4.0.0,>=3.2.9",
   "latch-config<1.0.0,>=0.1.6",
   "latch-data-validation<1.0.0,>=0.1.10",
   "latch-o11y>=1.0.0,<2.0.0",

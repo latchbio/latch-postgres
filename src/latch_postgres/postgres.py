@@ -6,15 +6,15 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 from textwrap import dedent
-from typing import Any, Concatenate, ParamSpec, TypeVar, cast
+from typing import Any, Concatenate, ParamSpec, Self, TypeVar, cast, overload, override
 
-import psycopg.sql as sql
 from latch_config.config import PostgresConnectionConfig
 from latch_data_validation.data_validation import JsonObject, validate
 from latch_o11y.o11y import dict_to_attrs, trace_function
 from opentelemetry.sdk.resources import Attributes
 from opentelemetry.trace import SpanKind, get_tracer
-from psycopg import AsyncConnection, AsyncCursor, IsolationLevel
+from psycopg import AsyncConnection, AsyncCursor, AsyncServerCursor, IsolationLevel, sql
+from psycopg._connection_base import CursorRow
 from psycopg.abc import AdaptContext, Params, Query
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from psycopg.errors import (
@@ -44,11 +44,10 @@ from psycopg.errors import (
     UndefinedFile,
 )
 from psycopg.errors import Error as PGError
-from psycopg.rows import AsyncRowFactory, Row, dict_row, kwargs_row
+from psycopg.rows import AsyncRowFactory, Row, TupleRow, dict_row, kwargs_row
 from psycopg.types.composite import CompositeInfo, register_composite
 from psycopg.types.enum import EnumInfo, register_enum
 from psycopg_pool import AsyncConnectionPool
-from typing_extensions import Self
 
 from latch_postgres.retries import CABackoff
 
@@ -129,7 +128,10 @@ class TracedAsyncCursor(AsyncCursor[Row]):
             finally:
                 span.set_attributes({"db.rowcount": self.rowcount})
 
-    async def executemany(self, query: Query, params_seq: Iterable[Params]) -> None:
+    @override
+    async def executemany(
+        self, query: Query, params_seq: Iterable[Params], *, returning: bool = False
+    ) -> None:
         with tracer.start_as_current_span(
             "postgres.query.many",
             kind=SpanKind.CLIENT,
@@ -140,7 +142,7 @@ class TracedAsyncCursor(AsyncCursor[Row]):
             },
         ) as span:
             try:
-                return await super().executemany(query, params_seq)
+                return await super().executemany(query, params_seq, returning=returning)
             finally:
                 span.set_attributes({"db.rowcount": self.rowcount})
 
@@ -148,10 +150,52 @@ class TracedAsyncCursor(AsyncCursor[Row]):
 class LatchAsyncConnection(AsyncConnection[Row]):
     trace_attributes: Attributes
 
+    @overload
+    def cursor(self, *, binary: bool = False) -> AsyncCursor[Row]: ...
+
+    @overload
     def cursor(
-        self, row_factory: AsyncRowFactory[Any], *, binary: bool = True
-    ) -> AsyncCursor[Any]:
-        res = super().cursor(row_factory=row_factory, binary=binary)
+        self, *, binary: bool = False, row_factory: AsyncRowFactory[CursorRow]
+    ) -> AsyncCursor[CursorRow]: ...
+
+    @overload
+    def cursor(
+        self,
+        name: str,
+        *,
+        binary: bool = False,
+        scrollable: bool | None = None,
+        withhold: bool = False,
+    ) -> AsyncServerCursor[Row]: ...
+
+    @overload
+    def cursor(
+        self,
+        name: str,
+        *,
+        binary: bool = False,
+        row_factory: AsyncRowFactory[CursorRow],
+        scrollable: bool | None = None,
+        withhold: bool = False,
+    ) -> AsyncServerCursor[CursorRow]: ...
+
+    @override
+    def cursor(
+        self,
+        name: str = "",
+        *,
+        binary: bool = False,
+        row_factory: AsyncRowFactory[Any] | None = None,
+        scrollable: bool | None = None,
+        withhold: bool = False,
+    ) -> AsyncCursor[Any] | AsyncServerCursor[Any]:
+        res = super().cursor(
+            name=name,
+            binary=binary,
+            row_factory=row_factory,
+            scrollable=scrollable,
+            withhold=withhold,
+        )
         assert isinstance(res, TracedAsyncCursor)
         res.trace_attributes = self.trace_attributes
         return res
@@ -163,9 +207,9 @@ class LatchAsyncConnection(AsyncConnection[Row]):
         def model_(**kwargs: JsonObject) -> T:
             return validate(kwargs, model)
 
-        async with self.cursor(kwargs_row(model_)) as curs:
+        async with self.cursor(row_factory=kwargs_row(model_)) as curs:
             curs = cast(AsyncCursor[T], curs)
-            await curs.execute(query, params=kwargs)
+            _ = await curs.execute(query, params=kwargs)
 
             yield curs
 
@@ -173,8 +217,8 @@ class LatchAsyncConnection(AsyncConnection[Row]):
     async def _query_no_validate(
         self, query: sql.SQL, **kwargs: Any
     ) -> AsyncGenerator[AsyncCursor[Any], None]:
-        async with self.cursor(dict_row) as curs:
-            await curs.execute(query, params=kwargs)
+        async with self.cursor(row_factory=dict_row) as curs:
+            _ = await curs.execute(query, params=kwargs)
 
             yield curs
 
@@ -210,7 +254,7 @@ class LatchAsyncConnection(AsyncConnection[Row]):
         return results[0]
 
     async def query_void(self, query: sql.SQL, **kwargs: Any) -> None:
-        await self.queryn(type(None), query, **kwargs)
+        _ = await self.queryn(type(None), query, **kwargs)
 
     async def query_unknown(self, query: sql.SQL, **kwargs: Any) -> Any:
         async with self._query_no_validate(query, **kwargs) as curs:
@@ -379,19 +423,22 @@ class TracedAsyncConnectionPool(AsyncConnectionPool):
             if self._real_configure is not None:
                 await self._real_configure(conn)
 
-    async def getconn(self, timeout: float | None = None) -> AsyncConnection[object]:
+    @override
+    async def getconn(self, timeout: float | None = None) -> AsyncConnection[TupleRow]:
         with tracer.start_as_current_span(
             "postgres.connect", kind=SpanKind.CLIENT, attributes=self._trace_attributes
         ):
             return await super().getconn(timeout)
 
     # todo(maximsmol): somehow track progress per-connection
+    @override
     async def open(self, wait: bool = False, timeout: float = 30) -> None:
         with tracer.start_as_current_span(
             "open db pool", attributes=conninfo_attributes(self.conninfo)
         ):
             return await super().open(wait, timeout)
 
+    @override
     async def close(self, timeout: float = 5) -> None:
         with tracer.start_as_current_span(
             "close db pool", attributes=conninfo_attributes(self.conninfo)
@@ -593,7 +640,7 @@ def get_with_conn_retry(
     return functools.partial(with_conn_retry, pool=pool, db_config=db_config)
 
 
-def sqlq(x: str):
+def sqlq(x: str) -> sql.SQL:
     return sql.SQL(dedent(x))
 
 
@@ -603,7 +650,7 @@ async def reset_conn(
     x: AsyncConnection[object],
     read_only: bool = False,
     isolation_level: IsolationLevel = IsolationLevel.SERIALIZABLE,
-):
+) -> None:
     x.prepare_threshold = 0
 
     if x.read_only != read_only:
