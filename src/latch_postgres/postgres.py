@@ -649,7 +649,7 @@ def sqlq(x: str) -> sql.SQL:
 async def reset_conn(
     x: AsyncConnection[object],
     read_only: bool = False,
-    isolation_level: IsolationLevel = IsolationLevel.SERIALIZABLE,
+    isolation_level: IsolationLevel = IsolationLevel.READ_COMMITTED,
 ) -> None:
     x.prepare_threshold = 0
 
@@ -666,7 +666,7 @@ def get_pool(
     *,
     application_name: str,
     read_only: bool = True,
-    isolation_level: IsolationLevel = IsolationLevel.SERIALIZABLE,
+    isolation_level: IsolationLevel = IsolationLevel.READ_COMMITTED,
     configure: Callable[[AsyncConnection[object]], Awaitable[None]] | None = None,
     reset: Callable[[AsyncConnection[object]], Awaitable[None]] | None = None,
 ) -> TracedAsyncConnectionPool:
